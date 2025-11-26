@@ -1,6 +1,4 @@
-
 library(shiny)
-library(TSA)
 library(zoo)
 library(quantmod)
 library(forecast)
@@ -8,64 +6,93 @@ library(lubridate)
 library(ggplot2)
 library(dplyr)
 
-#Function to fit armima model, detect largest residuals, and create plot
-detect_anom = function(cur_symb = "FB", 
+# Function to fit ARIMA model, detect largest residuals, and create plot
+detect_anom = function(cur_symb = "META", 
                        alpha = 0.05, 
-                       start.date = "01-01-2014",
-                       end.date = "02-01-2014"){  
+                       start.date = "2014-01-01",
+                       end.date = "2025-02-01"){  
   
-  cur_ts = getSymbols(cur_symb, from = start.date, to = end.date)
-  cur_data = get(cur_symb)[, 6]
-  dates = ymd(start.date) + days(1:length(cur_data))
-  #A model is fit the the log of the adjusted closing price
-  model = auto.arima(log(cur_data))
-  estimate = fitted(model)
-  #outliers are classified by those above the sensitivity level
-  anom_index = which( residuals(model) > alpha) 
-  anom_dates = ymd(start.date) + days(anom_index)
-  
-  mydata = data_frame(date = dates, value = as.vector(cur_data))
-  points = data_frame(date = anom_dates, value = as.vector(cur_data)[anom_index])
-  
-  point.size = residuals(model)[anom_index]*100
-  
-  #plot object is created
-  ggplot_1 = 
-    ggplot(mydata, aes( date, value)) +
-    geom_line(col = "chartreuse4") + 
-    geom_point( data = points, aes( date, value), size = point.size , col = "red", alpha = 0.5) + 
-    geom_text(data = points, aes( date, value), hjust = 0, vjust = 0, label = points$date) + 
-    ggtitle(paste(cur_symb, "adjusted closing price")) +
-    xlab("Date") + 
-    ylab("Adjusted Close (USD)") + 
-    theme_linedraw() + 
-    theme(axis.text=element_text(size=12),
-          axis.title=element_text(size=14,face="bold"))
-  
-  
-   output = list(date = anom_dates, plot = ggplot_1, model = model)  
-   
-  return(output)
+  tryCatch({
+    # Download stock data
+    getSymbols(cur_symb, from = start.date, to = end.date, auto.assign = TRUE, env = .GlobalEnv)
+    cur_data = get(cur_symb, envir = .GlobalEnv)[, 6]
+    
+    # Create date sequence matching actual data length
+    dates = index(cur_data)
+    
+    # Fit model to the log of the adjusted closing price
+    model = auto.arima(log(as.numeric(cur_data)))
+    estimate = fitted(model)
+    
+    # Outliers are classified by those above the sensitivity level
+    anom_index = which(residuals(model) > alpha) 
+    
+    if(length(anom_index) > 0){
+      anom_dates = dates[anom_index]
+      
+      mydata = data.frame(date = dates, value = as.numeric(cur_data))
+      points = data.frame(date = anom_dates, value = as.numeric(cur_data)[anom_index])
+      
+      point.size = pmax(residuals(model)[anom_index] * 100, 2)
+      
+      # Create plot
+      ggplot_1 = 
+        ggplot(mydata, aes(date, value)) +
+        geom_line(col = "chartreuse4") + 
+        geom_point(data = points, aes(date, value), size = point.size, col = "red", alpha = 0.5) + 
+        geom_text(data = points, aes(date, value), hjust = 0, vjust = -0.5, 
+                  label = format(points$date, "%Y-%m-%d"), size = 3) + 
+        ggtitle(paste(cur_symb, "adjusted closing price")) +
+        xlab("Date") + 
+        ylab("Adjusted Close (USD)") + 
+        theme_linedraw() + 
+        theme(axis.text = element_text(size = 12),
+              axis.title = element_text(size = 14, face = "bold"))
+    } else {
+      mydata = data.frame(date = dates, value = as.numeric(cur_data))
+      ggplot_1 = 
+        ggplot(mydata, aes(date, value)) +
+        geom_line(col = "chartreuse4") + 
+        ggtitle(paste(cur_symb, "adjusted closing price - No anomalies detected")) +
+        xlab("Date") + 
+        ylab("Adjusted Close (USD)") + 
+        theme_linedraw()
+      
+      anom_dates = character(0)
+    }
+    
+    output = list(date = anom_dates, plot = ggplot_1, model = model)  
+    return(output)
+    
+  }, error = function(e){
+    return(list(date = character(0), 
+                plot = ggplot() + ggtitle(paste("Error:", e$message)),
+                model = NULL))
+  })
 }
 
-#Creates stock info for "details" page
+# Creates stock info for "details" page
 stockinfo = function(ticker, date){
-  start.date =  ymd(date) - months(1)
-  end.date = ymd(date) + months(1)
-  #a function to get some info on a stock at a given date
-  stock_object = getSymbols(ticker, from = start.date, to = end.date)
-  chartSeries(get(stock_object), 
-              name = ticker, 
-              theme = "white")
+  tryCatch({
+    start.date = ymd(date) - months(1)
+    end.date = ymd(date) + months(1)
+    
+    getSymbols(ticker, from = start.date, to = end.date, auto.assign = TRUE, env = .GlobalEnv)
+    chartSeries(get(ticker, envir = .GlobalEnv), 
+                name = ticker, 
+                theme = "white")
+  }, error = function(e){
+    plot.new()
+    text(0.5, 0.5, paste("Error loading chart:", e$message))
+  })
 }
 
-output_dates = NULL
-
-# Define server logic required to draw a histogram
+# Define server logic
 shinyServer(function(input, output, session) {
   
-  #allows for fast updating based on input
+  # Reactive data input
   dataInput <- reactive({
+    req(input$ticker, input$dateRange)
     detect_anom(cur_symb = input$ticker,
                 alpha = input$alpha,
                 start.date = input$dateRange[1],
@@ -73,18 +100,27 @@ shinyServer(function(input, output, session) {
   })
   
   output$distPlot <- renderPlot({
-    #main plot with labeled anomalies
-      dataInput()$plot
+    dataInput()$plot
   })
   
-  #reactive input selection 
+  # Reactive input selection for anomaly dates
   output$selectUI <- renderUI({
-    selectInput("anomDates", "Select date", as.character(dataInput()$date))
+    dates = dataInput()$date
+    if(length(dates) > 0){
+      selectInput("anomDates", "Select date", as.character(dates))
+    } else {
+      selectInput("anomDates", "Select date", choices = "No anomalies detected")
+    }
   })
   
   output$quantPlot <- renderPlot({
-    #stock information 
-    stockinfo( ticker = input$ticker, date = input$anomDates)
+    req(input$anomDates)
+    if(input$anomDates != "No anomalies detected"){
+      stockinfo(ticker = input$ticker, date = input$anomDates)
+    } else {
+      plot.new()
+      text(0.5, 0.5, "No anomalies to display")
+    }
   })
   
 })
