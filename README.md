@@ -1,5 +1,7 @@
 # Time-Series-Stock-Anomaly-Detection
 
+** CLICK HERE TO SEE MY APP **
+
 https://samdc.shinyapps.io/value-investing-app/
 
 This app identifies sudden shifts in stock prices by fitting ARIMA models.  Once a model has been fit, outlying price jumps are
