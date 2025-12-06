@@ -1,0 +1,11 @@
+Title: Value Investing Anomaly Detection & Dividend Analysis
+Author: Samuel Castillo
+AuthorUrl: https://github.com/sdcastillo
+License: GPL-3
+DisplayMode: Showcase
+Tags: finance, stocks, anomaly-detection, dividends, value-investing, time-series
+Type: Shiny
+Description: Interactive dashboard for detecting stock price anomalies using ARIMA modeling 
+    and analyzing dividend histories for value investing strategies. Features include 
+    anomaly detection with customizable sensitivity, historical dividend tracking, and 
+    comparative dividend yield analysis across multiple tickers.
